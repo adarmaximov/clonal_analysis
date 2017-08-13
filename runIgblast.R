@@ -232,7 +232,8 @@ parse.igblast <- function( input.sequences, igblastRes.dir, in.name, Vgerm, Jger
       next 
     
     # get sequence 
-    q.seq <- input.sequences[res.df[i,SEQUENCE_ID], SEQ]
+    q.seq <- input.sequences[grep(res.df[i,SEQUENCE_ID], input.sequences[,HEAD]), SEQ]
+    
     
     # check stand - if '-' - reverse it
     res.df <- res.df[i, SEQUENCE := ifelse(check.strand(q.data), q.seq, toString(reverseComplement(DNAString(q.seq))))]
@@ -293,6 +294,8 @@ igblast <- function(in.name, inSeq.dir, out.dir, igblast.path, Vgerm, Jgerm, cha
   # parse Igblast
   res.df <- parse.igblast(input.sequences, igblastRes.dir, in.name, Vgerm, Jgerm, chain )
   
+  # remove bad sequences
+  res.df <- res.df[VJ_DIST>=-40,]
   # write output 
   out.name <- paste0(out.dir, substr(in.name, 1, nchar(in.name)-6), '.csv')
   # new

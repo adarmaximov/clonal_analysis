@@ -6,7 +6,7 @@ require(Biostrings)
 
 # directories
 #-------------------
-IGBLAST.PATH <- '/IgBLAST/ncbi-igblast-1.4.0/' # contains IgBLAST program
+IGBLAST.PATH <- '/IgBLAST/ncbi-igblast-1.7.0/' # contains IgBLAST program
 GERMLINE.PATH <- '/germline/' # contains germline sequences and IMGT CDR/FWR regions
 
 # flags
@@ -72,7 +72,7 @@ main <- function(in.dir, dir.name, organism, chain, IGBLAST = T, VJ.FASTA = T, T
   fasta.dir <- paste0(in.dir, 'raw_fasta/')
   
   # get file(s) in directory
-  fasta.files <- list.files(fasta.dir, pattern='fa$')
+  fasta.files <- list.files(fasta.dir, pattern='fasta$')
   
   #---------------------------------------------------------------------------------------------------
   # PART I - Runs IgBLAST, parse output file and create csv file
@@ -131,7 +131,7 @@ main <- function(in.dir, dir.name, organism, chain, IGBLAST = T, VJ.FASTA = T, T
   dir.create(tree.out, recursive=T, showWarnings = FALSE)
   
   # get all V-J-distance FASTA files
-  VJdis.files <- list.files(path = VJdis.out, pattern='*.fa', full.names = F)
+  VJdis.files <- list.files(path = VJdis.out, pattern='*.fasta', full.names = F)
   
   if(TREES){
     print('Build phylogenetic trees')

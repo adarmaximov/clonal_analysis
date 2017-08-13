@@ -59,11 +59,12 @@ cutting_the_tree<-function(edge.dt, numOfChange, n.leaves, smallerthantresh, val
         #updating the line number and the number of suns
         validvertex[j-n.leaves,'lineNum'] <- index
         validvertex[j-n.leaves, 'numOfChild'] <- countSuns
+      } else {
+        validvertex[j-n.leaves,'lineNum'] <- -1
+        validvertex[j-n.leaves, 'numOfChild'] <- -1
       }
       #a new vertex
       j<- edge.dt[i, from]
-      validvertex[j-n.leaves,'lineNum'] <- -1
-      validvertex[j-n.leaves, 'numOfChild'] <- -1
       #starsing to count the suns from the begining
       countSuns<-0
       index<-0
@@ -77,6 +78,9 @@ cutting_the_tree<-function(edge.dt, numOfChange, n.leaves, smallerthantresh, val
   if (countSuns<=1){
     validvertex[j-n.leaves, 'lineNum'] <- index
     validvertex[j-n.leaves, 'numOfChild']<-countSuns
+  } else {
+    validvertex[j-n.leaves,'lineNum'] <- -1
+    validvertex[j-n.leaves, 'numOfChild'] <- -1
   }
   #running over the column of the to vertex
   for (m in 1:nrow(edge.dt)){
@@ -91,7 +95,7 @@ cutting_the_tree<-function(edge.dt, numOfChange, n.leaves, smallerthantresh, val
         index2<- as.numeric(validvertex[index-n.leaves, 'lineNum'])
         edge.dt <- edge.dt[m, to := edge.dt[index2, to]]
         edge.dt <- edge.dt[m, distance := edge.dt[index2, distance] + edge.dt[m, distance]]
-        validEdge[index2-n.leaves] <- F
+        validEdge[index2] <- F
         numOfChange <- numOfChange + 1
       } else if(validvertex[index-n.leaves, 'numOfChild']==-2){
         validEdge[m] <- F
@@ -117,6 +121,7 @@ cutting <- function(edge.dt, tree.threshold){
     numOfChange<- list_objects$numOfChange
     edge.dt<- list_objects$edge.dt
     smallerthantresh <- edge.dt[,distance]<=tree.threshold
+    validEdge <- edge.dt[,distance]<=tree.threshold
     if(nrow(edge.dt)==0){
       numOfChange<-0
     } else {
@@ -134,7 +139,6 @@ cutting <- function(edge.dt, tree.threshold){
   return(edge.dt)
 }
 
-
 cut.clones <- function(nameSeq.dt, edge.dt, tree.threshold, file.name, curr.tree){
   
   nameSeq.dt <- nameSeq.dt[,head2 := sapply(strsplit(nameSeq.dt[,head], paste0(file.name, '_', curr.tree)), function(x) substr(x[2],2, nchar(x[2])))]
@@ -145,13 +149,12 @@ cut.clones <- function(nameSeq.dt, edge.dt, tree.threshold, file.name, curr.tree
   # Cut edges longer than threshold
   #trim.edge.dt <- cutting(edge.dt, tree.threshold)
   trim.edge.dt <- edge.dt[edge.dt[,distance]<=tree.threshold,]
-  
+  clone.id <- 1
   if(nrow(trim.edge.dt)>0){
     
     # Get roots of all subtrees
     sub.roots <- setdiff(trim.edge.dt[,from], trim.edge.dt[,to])
     
-    clone.id <- 1
     # For each root, get subtree edges and nodes
     for(root in sub.roots) {
       at.bottom <- F
@@ -196,7 +199,7 @@ cut.clones <- function(nameSeq.dt, edge.dt, tree.threshold, file.name, curr.tree
   
   # add singletons as clones
   if(length(sing)>0){
-    nameSeq.dt[sing, cloneID := as.numeric(1:length(sing))]
+    nameSeq.dt[sing, cloneID := as.numeric(clone.id:(clone.id+length(sing)))]
   }
   
   # remove internal sequences from nameSeq.dt
@@ -293,7 +296,7 @@ get.regions <- function(regions, Vlen, V.RF){
     neg.ind <- which(regions[i,reg.names, with=F]<0)
     if(length(neg.ind)==1)
       regions <- regions[i, reg.names[neg.ind] := 1]
-    else{
+    else if(length(neg.ind)>1){
       regions <- regions[i, reg.names[1:(length(neg.ind)-1)] := -1]
       regions <- regions[i, reg.names[length(neg.ind)] := 1]
     }    
@@ -549,27 +552,6 @@ compute.edge <- function(nameSeq.dt, edge.dt){
   
   return(edge.dt)
 }
-
-# load germline sequences
-#germline.path <- '/media/raid10/jennifer/BuildTrees/merged_version/germline/'
-# germline.path <- 'C:/Users/Jennifer/Research/germline/'
-# organism <- 'human'
-# chain <- 'VH'
-# Vgerm <- read.fasta(paste0(germline.path, organism, '/', chain, '/Vgermline_', organism, '_', chain, '.fasta'),
-#                     seqtype = "DNA", as.string = T, forceDNAtolower = F, set.attributes = F, legacy.mode = T, seqonly = F, strip.desc = F)
-# Jgerm <- read.fasta(paste0(germline.path, organism, '/', chain, '/Jgermline_', organism, '_', chain, '.fasta'),
-#                     seqtype = "DNA", as.string = T, forceDNAtolower = F, set.attributes = F, legacy.mode = T, seqonly = F, strip.desc = F)
-# 
-# dir.name <- 'M29_BM_PBL'
-# in.dir <- '/media/raid10/jennifer/Analyzed_Bcells/human/M29_BM_PBL/250.47/Trees/'
-# out.seq.dir <- '/media/raid10/jennifer/Analyzed_Bcells/human/M29_BM_PBL/250.47/Sequences/'
-# out.clones.dir <- '/media/raid10/jennifer/Analyzed_Bcells/human/M29_BM_PBL/250.47/Clones/'
-# Vlen <- 250
-# Jlen <- 47
-# regions <- fread(paste0(germline.path, organism, '/', chain, '/CDR_FR_regions_IgBLAST_', organism, '_', chain, '.csv'),header=T)
-# tree.threshold <- 4
-#convert.format(dir.name, in.dir, out.seq.dir, out.clones.dir, Vlen, Jlen, Vgerm, Jgerm, regions, tree.threshold){
-
 
 convert.format <- function(dir.name, in.dir, out.seq.dir, out.clones.dir, Vlen, Jlen, Vgerm, Jgerm, regions, tree.threshold){
   

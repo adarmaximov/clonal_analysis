@@ -177,7 +177,7 @@ build.trees <- function( FASTA.file, dir.name, in.dir, out.dir ){
   # skip small or big files
   n.seq <- nrow(fasta.dna)
   
-  file.name <- substr(FASTA.file, 1, nchar(FASTA.file)-3)
+  file.name <- substr(FASTA.file, 1, nchar(FASTA.file)-6)
   
   if( n.seq <= MIN.SEQ) { 
     print(paste0(FASTA.file,' - Not enough sequences to make tree with Phylip'))
