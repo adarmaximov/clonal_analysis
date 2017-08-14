@@ -17,8 +17,14 @@ shinyServer(function(input,output, session){
 
         #create this direcrotry and put files in paste0(in.dir, 'raw_fasta')
         dir.create(in.dir, recursive = T, showWarnings = F)
-        temp<-paste0(in.dir, 'raw_fasta', '/')
-        dir.create(temp, recursive = T, showWarnings = F)
+        if (input$fastq){
+          temp<-paste0(in.dir, 'raw_fastq', '/')
+          dir.create(temp, recursive = T, showWarnings = F)
+        } else {
+          temp<-paste0(in.dir, 'raw_fasta', '/')
+          dir.create(temp, recursive = T, showWarnings = F)
+        }
+        
         #create paste0(in.dir, 'raw_fasta') and upload all fasta files that the user choose into it
         for (i in 1:(nrow(input$file))){
           file.copy(input$file[[i,'datapath']], paste0(temp, input$file[[i,'name']]))
