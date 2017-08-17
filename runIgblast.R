@@ -161,6 +161,10 @@ get.alignment <- function( res.df, q.ind, q.data, chain, Vgerm, Jgerm ){
     q.Vend <- q.Vend + nchar(s.Vseq)-s.Vend 
   if(s.Jstart > 1)
     q.Jstart <- q.Jstart - (s.Jstart-1)
+  if(q.Vstart > 1){
+    q.Vend <- q.Vend - q.Vstart + 1
+    q.Jstart <- q.Jstart - q.Vstart + 1
+  }
   res.df <- res.df[q.ind, V_END := q.Vend]
   res.df <- res.df[q.ind, J_START := q.Jstart]
   res.df <- res.df[q.ind, VJ_DIST := q.Jstart-q.Vend-1]
@@ -217,7 +221,7 @@ parse.igblast <- function( input.sequences, igblastRes.dir, in.name, Vgerm, Jger
   
   # parse each query results separatly
   for(i in 1:n.queries){
-    
+
     # get current lines in igblast output file
     if (i==n.queries)
       q.data <- igblast.out[c(start.ind[i]:length(igblast.out))]
@@ -233,9 +237,9 @@ parse.igblast <- function( input.sequences, igblastRes.dir, in.name, Vgerm, Jger
     
     # get sequence 
     q.seq <- input.sequences[grep(res.df[i,SEQUENCE_ID], input.sequences[,HEAD]), SEQ]
+  
     
-    
-    # check stand - if '-' - reverse it
+    #check strand - if '-' - reverse it
     res.df <- res.df[i, SEQUENCE := ifelse(check.strand(q.data), q.seq, toString(reverseComplement(DNAString(q.seq))))]
     
     
@@ -289,7 +293,7 @@ igblast <- function(in.name, inSeq.dir, out.dir, igblast.path, Vgerm, Jgerm, cha
   input.sequences <- read.FASTA(in.name, inSeq.dir)
   
   # run IgBLAST
-  run.igblast(paste0(inSeq.dir,in.name), igblast.path, igblastRes.dir, organism)
+ # run.igblast(paste0(inSeq.dir,in.name), igblast.path, igblastRes.dir, organism)
   
   # parse Igblast
   res.df <- parse.igblast(input.sequences, igblastRes.dir, in.name, Vgerm, Jgerm, chain )
