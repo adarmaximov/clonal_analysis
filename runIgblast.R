@@ -293,7 +293,7 @@ igblast <- function(in.name, inSeq.dir, out.dir, igblast.path, Vgerm, Jgerm, cha
   input.sequences <- read.FASTA(in.name, inSeq.dir)
   
   # run IgBLAST
- # run.igblast(paste0(inSeq.dir,in.name), igblast.path, igblastRes.dir, organism)
+  run.igblast(paste0(inSeq.dir,in.name), igblast.path, igblastRes.dir, organism)
   
   # parse Igblast
   res.df <- parse.igblast(input.sequences, igblastRes.dir, in.name, Vgerm, Jgerm, chain )

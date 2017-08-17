@@ -147,8 +147,8 @@ cut.clones <- function(nameSeq.dt, edge.dt, tree.threshold, file.name, curr.tree
   nameSeq.dt <- nameSeq.dt[, cloneID := -1 ]
   
   # Cut edges longer than threshold
-  #trim.edge.dt <- cutting(edge.dt, tree.threshold)
-  trim.edge.dt <- edge.dt[edge.dt[,distance]<=tree.threshold,]
+  trim.edge.dt <- cutting(edge.dt, tree.threshold)
+  #trim.edge.dt <- edge.dt[edge.dt[,distance]<=tree.threshold,]
   clone.id <- 1
   if(nrow(trim.edge.dt)>0){
     
