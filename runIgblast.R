@@ -221,7 +221,6 @@ parse.igblast <- function( input.sequences, igblastRes.dir, in.name, Vgerm, Jger
   
   # parse each query results separatly
   for(i in 1:n.queries){
-
     # get current lines in igblast output file
     if (i==n.queries)
       q.data <- igblast.out[c(start.ind[i]:length(igblast.out))]
@@ -236,8 +235,10 @@ parse.igblast <- function( input.sequences, igblastRes.dir, in.name, Vgerm, Jger
       next 
     
     # get sequence 
-    q.seq <- input.sequences[grep(res.df[i,SEQUENCE_ID], input.sequences[,HEAD]), SEQ]
-  
+    q.seq <- input.sequences[res.df[i,SEQUENCE_ID], SEQ]
+    if(is.na(q.seq))
+      q.seq <- input.sequences[grep(res.df[i,SEQUENCE_ID], input.sequences[,HEAD]), SEQ]
+    
     
     #check strand - if '-' - reverse it
     res.df <- res.df[i, SEQUENCE := ifelse(check.strand(q.data), q.seq, toString(reverseComplement(DNAString(q.seq))))]

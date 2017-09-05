@@ -3,6 +3,7 @@
 #-------------------
 require(seqinr)
 require(Biostrings)
+require(stringr)
 
 # directories
 #-------------------
@@ -90,9 +91,9 @@ main <- function(in.dir, dir.name, organism, chain, IGBLAST = T, VJ.FASTA = T, T
     print (Sys.time())
     
     #run and parse IgBLAST for each FASTA file
-    for(i in 1:length(fasta.files))
+    for(i in 1:length(fasta.files)){
       res <- igblast(fasta.files[i], fasta.dir, igblast.out , igblast.path, Vgerm, Jgerm, chain, organism)
-    
+    }
   }
   # determine Vlen and Jlen from data
   print('Determine Vlen and Jlen')
@@ -127,32 +128,38 @@ main <- function(in.dir, dir.name, organism, chain, IGBLAST = T, VJ.FASTA = T, T
   source(paste0(w.dir, '/buildTrees.R'))
   
   # create output directory
-  tree.out <- paste0(in.dir, Vlen, '.', Jlen, '/Trees/')
+  tree.out <- paste0(in.dir, Vlen, '.', Jlen, '/Trees_TMP/')
   dir.create(tree.out, recursive=T, showWarnings = FALSE)
   
   # get all V-J-distance FASTA files
   VJdis.files <- list.files(path = VJdis.out, pattern='*.fasta', full.names = F)
   
+  Vs <- str_sub(str_extract(VJdis.files, pattern='[0-9]{3}\\.[0-9]{3}'),1, 3)
+  uni.Vs <- unique(Vs)
   if(TREES){
     print('Build phylogenetic trees')
     print (Sys.time())
     
-    for(j in 1:length(VJdis.files)){
-      build.trees(VJdis.files[j], dir.name, VJdis.out, tree.out)
-    }
+    # run buildTrees in parrallel
+    print('start cluster')
+    cl <- makeCluster(3)
+    clusterCall(cl,function() {source('buildTrees.R')})
+    clusterExport(cl, list('dir.name', 'VJdis.out', 'tree.out'), envir=environment())
+    print('parSapply starts')
+    parSapply(cl, uni.Vs, function(x) build.trees(dir.name, VJdis.out, tree.out, x))
+    stopCluster(cl)
+    print (Sys.time())
     
-    # remove VJ files
-    unlink(VJdis.out, recursive = T)
-  }
+   }
   
   #---------------------------------------------------------------------------------------------------
   # PART IV - Cut trees into clones and convert all sequences into new format 
   #---------------------------------------------------------------------------------------------------
   source(paste0(w.dir, '/convertFormat.R'))
   
-  # create output directory
-  seq.out <- paste0(in.dir, Vlen, '.', Jlen, '/Sequences/')
-  clones.out <- paste0(in.dir, Vlen, '.', Jlen, '/Clones/')
+  # create temporary output directory
+  seq.out <- paste0(in.dir, Vlen, '.', Jlen, '/Sequences_TMP/')
+  clones.out <- paste0(in.dir, Vlen, '.', Jlen, '/Clones_TMP/')
   
   dir.create(seq.out, recursive=T, showWarnings = FALSE)
   dir.create(clones.out, recursive=T, showWarnings = FALSE)
@@ -162,11 +169,47 @@ main <- function(in.dir, dir.name, organism, chain, IGBLAST = T, VJ.FASTA = T, T
   
   if(FORMAT){
     print('Format clone files')
+    #if(!file.exists(paste0(tree.out, dir.name, '_sequences.fasta'))){
+    #  print('no trees!')
+    #  return()
+    #}
+    
+    ## split files by V gene
+    #uni.Vs <- split.tree.files(dir.name, tree.out)
+    
+    # run convert.format in parrallel
+    print('start cluster')
+    cl <- makeCluster(3)
+    clusterCall(cl,function() {source('convertFormat.R')})
+    clusterExport(cl, list('dir.name', 'tree.out', 'seq.out', 'clones.out', 'Vlen', 'Jlen', 'Vgerm', 'Jgerm', 'regions', 'TREE.THRESHOLD'), envir=environment())
+    print('parSapply starts')
+    parSapply(cl, uni.Vs, function(x) convert.format(x, dir.name, tree.out, seq.out, clones.out, Vlen, Jlen, Vgerm, Jgerm, regions, TREE.THRESHOLD))
+    stopCluster(cl)
     print (Sys.time())
-    clone.info <- convert.format(dir.name, tree.out, seq.out, clones.out, Vlen, Jlen, Vgerm, Jgerm, regions, TREE.THRESHOLD)
+    
+    # merge output files
+    seq.out.merged <- paste0(in.dir, Vlen, '.', Jlen, '/Sequences/')
+    clones.out.merged <- paste0(in.dir, Vlen, '.', Jlen, '/Clones/')
+    tree.out.merged <- paste0(in.dir, Vlen, '.', Jlen, '/Trees/')
+    
+    dir.create(seq.out.merged, recursive=T, showWarnings = F)
+    dir.create(clones.out.merged, recursive=T, showWarnings = F)
+    dir.create(tree.out.merged, recursive=T, showWarnings = F)
+    
+    merge.out.files(dir.name, seq.out, clones.out, seq.out.merged, clones.out.merged)
+    merge.tree.mutation.files(dir.name, tree.out, tree.out.merged)
+    
+    # get total clone/sequence number for summary
+    clone.info <- get.clone.info(dir.name, seq.out.merged, clones.out.merged)
     
     # save all info about current run
     print.info(in.dir, dir.name, Vlen, Jlen, del, clone.info)
+    
+    # remove temporary files
+    #unlink(VJdis.out, recursive = T)
+    #unlink(seq.out, recursive = T)
+    #unlink(clones.out, recursive = T)
+    #unlink(tree.out,  recursive = T)
   }
   
 }

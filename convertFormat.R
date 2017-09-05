@@ -1,6 +1,7 @@
 library(seqinr)
 library(data.table)
 library(Biostrings)
+library(stringr)
 # Read FASTA file and convert to data frame
 #
 # Params:   FASTA file name
@@ -199,7 +200,7 @@ cut.clones <- function(nameSeq.dt, edge.dt, tree.threshold, file.name, curr.tree
   
   # add singletons as clones
   if(length(sing)>0){
-    nameSeq.dt[sing, cloneID := as.numeric(clone.id:(clone.id+length(sing)))]
+    nameSeq.dt[sing, cloneID := as.numeric(clone.id:(clone.id+length(sing)-1))]
   }
   
   # remove internal sequences from nameSeq.dt
@@ -210,7 +211,6 @@ cut.clones <- function(nameSeq.dt, edge.dt, tree.threshold, file.name, curr.tree
   
   return(list(nameSeq.dt, roots))
 }
-
 
 create.out.table <- function(N){
   
@@ -410,13 +410,27 @@ fix.pair.format <- function(nameSeq.dt, tree.threshold){
   # get mutation position
   distance <- length(which(seq.1.char!= seq.2.char))
   # add clone number
-  if(distance <= threshold){ # same clone
+  if(distance <= tree.threshold){ # same clone
     nameSeq.dt <- nameSeq.dt[,cloneID := 1]
   }else{ # different clones
     nameSeq.dt <- nameSeq.dt[,cloneID := as.list(1:2)]
   }
   
   return(nameSeq.dt)
+}
+get.consensus <- function(seq){
+  con.seq <- consensusString(DNAStringSet(seq), ambiguityMap='N')
+  amb.pos <- gregexpr(con.seq, pattern='N')
+  if(sum(amb.pos!=-1)>1){
+    split.com <- strsplit(con.seq, '')
+    split.seq <- strsplit(seq, '')
+    for(i in 1:length(amb.pos)){
+      nts <- sapply(split.seq, function(x) x[amb.pos[i]])
+      split.con[[1]][amb.pos[i]] <- nts[[samples(1:length(nts),1)]]
+    }
+    con.seq <- c2s(split.con[[1]])
+  }
+  return(con.seq)
 }
 
 merge.clones <- function( out.dt, nameSeq.dt, roots){
@@ -429,9 +443,12 @@ merge.clones <- function( out.dt, nameSeq.dt, roots){
     tmp.dt <- out.dt[ nameSeq.dt[.(i), head],]
     out.dt.clones <- out.dt.clones[i, names(tmp.dt) := tmp.dt[1,]]
     
-    if(nrow(tmp.dt)>1) # not a singleton - get the ancestral sequence
-      out.dt.clones[i, SEQUENCE := roots[i, seq]]
-    
+    if(nrow(tmp.dt)>1){ # not a singleton - get the ancestral sequence
+      if(is.numeric(roots)) # in case of a tree with 2 sequences
+        out.dt.clones[i, SEQUENCE := get.consensus(nameSeq.dt[,seq])]
+      else
+        out.dt.clones[i, SEQUENCE := roots[i, seq]]
+    }
     # update copy number (clone size)
     out.dt.clones <- out.dt.clones[i, CP_NUM := sum(tmp.dt[,CP_NUM])] 
     
@@ -439,7 +456,7 @@ merge.clones <- function( out.dt, nameSeq.dt, roots){
   return(out.dt.clones)
 }
 
-split.clones <- function(out.dt.clones, out.dt, out.seq.dir, out.clone.dir, dir.name){
+split.clones <- function(out.dt.clones, out.dt, out.seq.dir, out.clone.dir, dir.name, V){
   # for each clone - split sequences into files, and update clone size
   setkey(out.dt, CLONE_ID)
   for(i in 1:nrow(out.dt.clones)){
@@ -455,12 +472,12 @@ split.clones <- function(out.dt.clones, out.dt, out.seq.dir, out.clone.dir, dir.
       tmp.dt.clones <- tmp.dt.clones[,CP_NUM := sum(tmp.dt.file[,CP_NUM])]
       
       # write files
-      if(!file.exists(paste0(out.seq.dir, dir.name, '_', files[j], '_out.csv'))){
-        fwrite(tmp.dt.file, file = paste0(out.seq.dir, dir.name, '_', files[j], '_out.csv'), sep=",", append = F, row.names = F, col.names = T)
-        fwrite(tmp.dt.clones, file = paste0(out.clone.dir, dir.name, '_', files[j], '_out.csv'), sep=",", append = F, row.names = F, col.names = T)   
+      if(!file.exists(paste0(out.seq.dir, dir.name, '_', files[j], '_', V, '_out.csv'))){
+        fwrite(tmp.dt.file, file = paste0(out.seq.dir, dir.name, '_', files[j], '_', V, '_out.csv'), sep=",", append = F, row.names = F, col.names = T)
+        fwrite(tmp.dt.clones, file = paste0(out.clone.dir, dir.name, '_', files[j], '_', V, '_out.csv'), sep=",", append = F, row.names = F, col.names = T)   
       }else{
-        fwrite(tmp.dt.file, file = paste0(out.seq.dir, dir.name, '_', files[j], '_out.csv'), sep=",", append = T, row.names = F, col.names = F)
-        fwrite(tmp.dt.clones, file = paste0(out.clone.dir, dir.name, '_', files[j], '_out.csv'), sep=",", append = T, row.names = F, col.names = F)   
+        fwrite(tmp.dt.file, file = paste0(out.seq.dir, dir.name, '_', files[j], '_', V, '_out.csv'), sep=",", append = T, row.names = F, col.names = F)
+        fwrite(tmp.dt.clones, file = paste0(out.clone.dir, dir.name, '_', files[j], '_', V, '_out.csv'), sep=",", append = T, row.names = F, col.names = F)   
       } 
     }
   }
@@ -470,7 +487,9 @@ get.file.ID <- function(out.dt, dir.name, curr.tree){
   
   tmp <- strsplit(sapply(strsplit(out.dt[,SEQUENCE_ID], 'Seq_'), function(x) x[2]),'_')
   out.dt <- out.dt[,FILE_ID := sapply(tmp, function(x) paste0(x[2:(length(x)-1)], collapse = '_'))]
-  
+  if(length(which(is.na(out.dt[,FILE_ID])))){
+    print('ss')
+  }
   return(out.dt)
 }
 
@@ -507,11 +526,14 @@ compute.mutations <- function(dir.name, curr.tree, nameSeq.dt, edge.dt, regions)
   # get V index
   V.ind <- as.numeric(substr(curr.tree,1,3))
   V.regions <- as.numeric(regions[V.ind, 2:8])
+  V.regions.names <- colnames(regions)[2:8][V.regions!=-1] # remove 'V_END'
+  V.regions.names <- V.regions.names[-length(V.regions.names)]
   # remove regions not in range of sequences
   V.regions <- V.regions[V.regions!=-1]
   V.regions.aa <- ceiling(V.regions/3)
   # mutations.df <- data.frame(NS.FR1=nrow(edge.dt), NS.CDR1=0, NS.FR2=0, NS.CDR2=0, NS.FR3=0, NS.CDR3=0, S.FR1=0, S.CDR1=0, S.FR2=0, S.CDR2=0, S.FR3=0, S.CDR3=0)
   for(i in 1:nrow(edge.dt)){
+    print(i)
     # get sequences
     seq.father <- nameSeq.dt[paste0(dir.name, '_', curr.tree, '_', edge.dt[i, from]),seq]
     seq.son <- nameSeq.dt[paste0(dir.name, '_', curr.tree, '_', edge.dt[i, to]),seq]
@@ -526,14 +548,21 @@ compute.mutations <- function(dir.name, curr.tree, nameSeq.dt, edge.dt, regions)
     seq.son.aa <- seqinr::translate(tolower(seq.son.char))
     # find mutation positions at amino acid level
     mut.pos.aa <- ceiling(mut.pos.nt/3)
+    # if mutations are found in the end of the sequence which does not have a full codon
+    if(sum(mut.pos.aa>length(seq.son.aa))>0)
+      mut.pos.aa <- mut.pos.aa[mut.pos.aa<=length(seq.son.aa)]
     NS.mut <- mut.pos.aa[seq.father.aa[mut.pos.aa]!=seq.son.aa[mut.pos.aa]]
     S.mut <- mut.pos.aa[seq.father.aa[mut.pos.aa]==seq.son.aa[mut.pos.aa]]
-    # divided by regions
-    a <- hist(NS.mut,  breaks=c(1, V.regions.aa[2:(length(V.regions.aa)-1)], length(seq.father.aa)), plot=F)
-    edge.dt[i, c('NS.FR1', 'NS.CDR1', 'NS.FR2', 'NS.CDR2', 'NS.FR3', 'NS.CDR3') := as.list(a$counts)]
-    a <- hist(S.mut,  breaks=c(1, V.regions.aa[2:(length(V.regions.aa)-1)], length(seq.father.aa)), plot=F)
-    edge.dt[i, c('S.FR1', 'S.CDR1', 'S.FR2', 'S.CDR2', 'S.FR3', 'S.CDR3') := as.list(a$counts)]
     
+    # divided by regions
+    if(length(NS.mut)>0){
+      a <- hist(NS.mut,  breaks=c(1, V.regions.aa[2:(length(V.regions.aa)-1)], length(seq.father.aa)), plot=F)
+      edge.dt[i,  (paste0('NS.', V.regions.names)) := as.list(a$counts)]
+    }
+    if(length(S.mut)>0){
+      a <- hist(S.mut,  breaks=c(1, V.regions.aa[2:(length(V.regions.aa)-1)], length(seq.father.aa)), plot=F)
+      edge.dt[i,  (paste0('S.', V.regions.names)) := as.list(a$counts)]
+    }
   }
   return(edge.dt)
 }
@@ -553,23 +582,26 @@ compute.edge <- function(nameSeq.dt, edge.dt){
   return(edge.dt)
 }
 
-convert.format <- function(dir.name, in.dir, out.seq.dir, out.clones.dir, Vlen, Jlen, Vgerm, Jgerm, regions, tree.threshold){
+convert.format <- function(V, dir.name, in.dir, out.seq.dir, out.clones.dir, Vlen, Jlen, Vgerm, Jgerm, regions, tree.threshold){
   
-  out.seq.name <- paste0(out.seq.dir, dir.name, '_out.csv')
-  out.clones.name <- paste0(out.clones.dir, dir.name, '_out.csv')
+  out.seq.name <- paste0(out.seq.dir, dir.name, '_', V, '_out.csv')
+  out.clones.name <- paste0(out.clones.dir, dir.name, '_', V, '_out.csv')
   
   V.RF <- get.RF(Vlen, Vgerm)
   regions <- get.regions(regions, Vlen, V.RF)
   
-  if(!file.exists(paste0(in.dir, dir.name, '_sequences.fasta'))){
+  if(!file.exists(paste0(in.dir, dir.name, '_sequences_', V, '.fasta'))){
     print('no trees!')
     return()
   }
   
-  all.nameSeq.dt <- read.FASTA(paste0(dir.name, '_sequences.fasta'), in.dir)
-  all.edge.dt <- fread( paste0(in.dir, dir.name, '_edges.tab'), sep="\t", header=T)
-  all.edge.dt[,c('NS.FR1', 'NS.CDR1', 'NS.FR2', 'NS.CDR2', 'NS.FR3', 'NS.CDR3', 'S.FR1', 'S.CDR1', 'S.FR2', 'S.CDR2', 'S.FR3', 'S.CDR3') := 0] 
-  
+  TREES <- F
+  all.nameSeq.dt <- read.FASTA(paste0(dir.name, '_sequences_', V, '.fasta'), in.dir)
+  if(file.exists(paste0(in.dir, dir.name, '_edges_', V, '.tab'))){
+    TREES <- T
+    all.edge.dt <- fread( paste0(in.dir, dir.name, '_edges_', V, '.tab'), sep="\t", header=T)
+    all.edge.dt[,c('NS.FR1', 'NS.CDR1', 'NS.FR2', 'NS.CDR2', 'NS.FR3', 'NS.CDR3', 'S.FR1', 'S.CDR1', 'S.FR2', 'S.CDR2', 'S.FR3', 'S.CDR3') := 0] 
+  }
   FIRST <- T
   start.ind <- 1
   end.ind <- 2
@@ -586,14 +618,15 @@ convert.format <- function(dir.name, in.dir, out.seq.dir, out.clones.dir, Vlen, 
     nameSeq.dt <- all.nameSeq.dt[start.ind:(end.ind-2),]
     curr.tree <- strsplit(strsplit(curr.tree.long, dir.name)[[1]][2], '_')[[1]][2]
     print(curr.tree)
+    
     start.ind <- end.ind-1
     if(nrow(nameSeq.dt) == 1){ # singleton
       nameSeq.dt <- fix.sing.format(nameSeq.dt)
     }else if (nrow(nameSeq.dt) == 2){
       nameSeq.dt <- fix.pair.format(nameSeq.dt, tree.threshold)
+      roots <- -1
     }else{
       edge.dt <- all.edge.dt[edge.start:(edge.start+nrow(nameSeq.dt)-2), ]
-      #edge.start <- edge.start+nrow(nameSeq.dt)-1
       
       edge.dt <- compute.mutations(dir.name, curr.tree, nameSeq.dt, edge.dt, regions)
       all.edge.dt <- all.edge.dt[edge.start:(edge.start+nrow(nameSeq.dt)-2), names(all.edge.dt):= edge.dt]
@@ -611,16 +644,12 @@ convert.format <- function(dir.name, in.dir, out.seq.dir, out.clones.dir, Vlen, 
     # cut start of sequences to fix reading frame
     out.dt <- fix.seq.RF(out.dt, nameSeq.dt, V.RF)
     # get copy number
-    # print('cpnum')
     out.dt <- get.cp.num(out.dt)
     # set clone ID's in output table
-    #  print('cloneId')
     out.dt <- set.clone.IDs(out.dt, nameSeq.dt, curr.tree)
     # get FR/CDR regions
-    # print('regions')
     out.dt <- set.regions(out.dt, regions, Jlen)
     # translate NT sequences
-    #print('trans')
     out.dt <- translate.seq(out.dt)
     # check functionality
     out.dt <- check.functionality( out.dt, Jlen, Jgerm )
@@ -632,7 +661,7 @@ convert.format <- function(dir.name, in.dir, out.seq.dir, out.clones.dir, Vlen, 
     }else{
       out.clones.dt <- out.dt
     }
-    split.clones(out.clones.dt, out.dt, out.seq.dir, out.clones.dir, dir.name)
+    split.clones(out.clones.dt, out.dt, out.seq.dir, out.clones.dir, dir.name, V)
     
     # save clones in output table
     if(!file.exists(out.seq.name)){
@@ -643,10 +672,104 @@ convert.format <- function(dir.name, in.dir, out.seq.dir, out.clones.dir, Vlen, 
       fwrite(out.clones.dt, file = out.clones.name, sep=",", append = T, row.names = F, col.names = F)
     }
   }  
-  fwrite(all.edge.dt, file = paste0(in.dir, dir.name, '_edge_mutations.tab'), sep="\t", row.names = F, col.names = T)
+  if(TREES)
+    fwrite(all.edge.dt, file = paste0(in.dir, dir.name, '_edge_mutations_', V, '.tab'), sep="\t", row.names = F, col.names = T)
   
-  # get total clone/sequence number for summary
-  clone.info <- get.clone.info(dir.name, out.seq.dir, out.clones.dir)
+  return()
+}
+
+split.tree.files <- function(dir.name, tree.out){
   
-  return(clone.info)
+  all.nameSeq.dt <- read.FASTA(paste0(dir.name, '_sequences.fasta'), tree.out)
+  all.edge.dt <- fread( paste0(tree.out, dir.name, '_edges.tab'), sep="\t", header=T)
+  
+  # split by Vs
+  tmp.seq <- str_extract(all.nameSeq.dt[,head], pattern='[0-9]{3}\\.[0-9]{3}')
+  tmp.edge <- str_extract(all.edge.dt[,Tree], pattern='[0-9]{3}\\.[0-9]{3}')
+  Vs.seq <- str_sub(tmp.seq, 1, 3)
+  Vs.edge <- str_sub(tmp.edge, 1, 3)
+  uni.Vs <- unique(Vs.seq)
+  # save files
+  for(i in 1:length(uni.Vs)){
+    tmp.nameSeq.df <- all.nameSeq.dt[Vs.seq==uni.Vs[i],]
+    write.FASTA(paste0(dir.name, '_sequences_', uni.Vs[i]), tree.out, tmp.nameSeq.df, append=F)
+    tmp.edge.dt <- all.edge.dt[Vs.edge==uni.Vs[i],]
+    fwrite(tmp.edge.dt, file=paste0(tree.out, dir.name, '_edges_', uni.Vs[i], '.tab'), quote=F, sep='\t', col.names=T, row.names=F) 
+  }
+  return(uni.Vs)
+}
+
+merge.out.files <- function(dir.name, seq.out, clones.out, seq.out.merged, clones.out.merged){
+  
+  all.files <- list.files(clones.out)
+  big.files.ind <-grep(all.files, pattern=paste0(dir.name, '_[0-9]{3}_out\\.csv'))
+  big.files <- all.files[big.files.ind]
+  all.files <- all.files[-big.files.ind]
+  # merge big files
+  out.seq.name <- paste0(seq.out.merged, dir.name, '_out.csv')
+  out.clones.name <- paste0(clones.out.merged, dir.name, '_out.csv')
+  for(i in 1:length(big.files)){
+    out.dt <- fread(paste0(seq.out, big.files[i]))
+    out.clones.dt <- fread(paste0(clones.out, big.files[i]))
+    if(!file.exists(out.seq.name)){
+      fwrite(out.dt, file = out.seq.name, sep=",", append = F, row.names = F, col.names = T)
+      fwrite(out.clones.dt, file = out.clones.name, sep=",", append = F, row.names = F, col.names = T)
+    }else{
+      fwrite(out.dt, file = out.seq.name, sep=",", append = T, row.names = F, col.names = F)
+      fwrite(out.clones.dt, file = out.clones.name, sep=",", append = T, row.names = F, col.names = F)
+    }
+  }
+  # merge all files
+  files <- sapply(str_split(all.files, pattern='_[0-9]{3}_out\\.csv'), function(x) x[[1]])
+  uni.files <- unique(files)
+  for(i in 1:length(uni.files)){
+    curr.files <- all.files[grep(files, pattern=uni.files[i])]
+    out.seq.name <- paste0(seq.out.merged, uni.files[i], '_out.csv')
+    out.clones.name <- paste0(clones.out.merged, uni.files[i], '_out.csv')
+    for(j in 1:length(curr.files)){
+      out.dt <- fread(paste0(seq.out, curr.files[j]))
+      out.clones.dt <- fread(paste0(clones.out, curr.files[j]))
+      if(!file.exists(out.seq.name)){
+        fwrite(out.dt, file = out.seq.name, sep=",", append = F, row.names = F, col.names = T)
+        fwrite(out.clones.dt, file = out.clones.name, sep=",", append = F, row.names = F, col.names = T)
+      }else{
+        fwrite(out.dt, file = out.seq.name, sep=",", append = T, row.names = F, col.names = F)
+        fwrite(out.clones.dt, file = out.clones.name, sep=",", append = T, row.names = F, col.names = F)
+      }
+    }
+  }
+}
+
+merge.tree.mutation.files <- function(dir.name, tree.out, tree.out.merged){
+  
+  mut.files <- list.files(tree.out, pattern='mutations')
+  tree.files <- list.files(tree.out, pattern='edges')
+  seq.files <- list.files(tree.out, pattern='sequences')
+  
+  mut.name <- paste0(tree.out.merged, dir.name, '_edge_mutations.tab')
+  tree.name <- paste0(tree.out.merged, dir.name, '_edges.tab')
+  seq.name <- paste0(tree.out.merged, dir.name, '_sequences')
+  
+  # merge tree and mutation files
+  for(i in 1:length(mut.files)){
+    mut.dt <- fread(paste0(tree.out, mut.files[i]))
+    tree.dt <- fread(paste0(tree.out, tree.files[i]))
+    if(!file.exists(mut.name)){
+      fwrite(mut.dt, file = mut.name, sep="\t", append = F, row.names = F, col.names = T)
+      fwrite(tree.dt, file = tree.name, sep="\t", append = F, row.names = F, col.names = T)
+    }else{
+      fwrite(mut.dt, file = mut.name, sep="\t", append = T, row.names = F, col.names = F)
+      fwrite(tree.dt, file = tree.name, sep="\t", append = T, row.names = F, col.names = F)
+    }
+  }
+  # merge sequence files
+  for(i in 1:length(seq.files)){
+    seq.dt <- read.FASTA(seq.files[i], tree.out)
+    if(!file.exists(paste0(seq.name, '.fasta'))){
+      write.FASTA(paste0(dir.name, '_sequences'), tree.out.merged, seq.dt, append=F)
+    }else{
+      write.FASTA(paste0(dir.name, '_sequences'), tree.out.merged, seq.dt, append=T)
+    }
+  }
+  
 }
