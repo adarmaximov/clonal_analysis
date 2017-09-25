@@ -89,12 +89,17 @@ main <- function(in.dir, dir.name, organism, chain, IGBLAST = T, VJ.FASTA = T, T
   if(IGBLAST){
     print('Run and parse IgBLAST')
     print (Sys.time())
-    
+
     #run and parse IgBLAST for each FASTA file
     for(i in 1:length(fasta.files)){
       res <- igblast(fasta.files[i], fasta.dir, igblast.out , igblast.path, Vgerm, Jgerm, chain, organism)
     }
+    #run the fix allele 
+    igblast.files<- list.files(igblast.out, pattern = 'csv$')
+    source(paste0(w.dir,'/fixing_alleles.R'))
+    runFixAlleles(igblast.files, igblast.out)
   }
+  
   # determine Vlen and Jlen from data
   print('Determine Vlen and Jlen')
   print (Sys.time())
@@ -133,24 +138,40 @@ main <- function(in.dir, dir.name, organism, chain, IGBLAST = T, VJ.FASTA = T, T
   
   # get all V-J-distance FASTA files
   VJdis.files <- list.files(path = VJdis.out, pattern='*.fasta', full.names = F)
-  
+  # get Vs
   Vs <- str_sub(str_extract(VJdis.files, pattern='[0-9]{3}\\.[0-9]{3}'),1, 3)
   uni.Vs <- unique(Vs)
+  # separate big files
+  VJdis.files.size <- file.size(paste0(VJdis.out, VJdis.files))
+  VJdis.files.big<- VJdis.files[VJdis.files.size>=1000000 & VJdis.files.size < 5000000]# throw huge trees
+  VJdis.files <- VJdis.files[VJdis.files.size<1000000]
+  
+  # run "small" files in parrallel
   if(TREES){
     print('Build phylogenetic trees')
     print (Sys.time())
-    
     # run buildTrees in parrallel
     print('start cluster')
-    cl <- makeCluster(3)
+    cl <- makeCluster(4)
     clusterCall(cl,function() {source('buildTrees.R')})
-    clusterExport(cl, list('dir.name', 'VJdis.out', 'tree.out'), envir=environment())
+    clusterExport(cl, list('dir.name', 'VJdis.out', 'tree.out', 'VJdis.files'), envir=environment())
     print('parSapply starts')
-    parSapply(cl, uni.Vs, function(x) build.trees(dir.name, VJdis.out, tree.out, x))
+    parSapply(cl, uni.Vs, function(x) build.trees(dir.name, VJdis.out, tree.out, x, VJdis.files))
     stopCluster(cl)
     print (Sys.time())
     
-   }
+    # for(i in 1: length(uni.Vs)){
+    #   build.trees(dir.name, VJdis.out, tree.out,uni.Vs[i], VJdis.files)
+    # }
+    # print(Sys.time())
+    # 
+    # run big trees sequencially
+    print('run big trees')
+    for(i in 1:length(uni.Vs))
+      build.trees(dir.name, VJdis.out, tree.out, uni.Vs[i], VJdis.files.big)
+    print (Sys.time())
+    
+  }
   
   #---------------------------------------------------------------------------------------------------
   # PART IV - Cut trees into clones and convert all sequences into new format 
@@ -185,6 +206,10 @@ main <- function(in.dir, dir.name, organism, chain, IGBLAST = T, VJ.FASTA = T, T
     print('parSapply starts')
     parSapply(cl, uni.Vs, function(x) convert.format(x, dir.name, tree.out, seq.out, clones.out, Vlen, Jlen, Vgerm, Jgerm, regions, TREE.THRESHOLD))
     stopCluster(cl)
+    # for(i in 1: length(uni.Vs)){
+    # convert.format(uni.Vs[i],dir.name, tree.out, seq.out, clones.out, Vlen, Jlen, Vgerm, Jgerm, regions, TREE.THRESHOLD)
+    # }
+    
     print (Sys.time())
     
     # merge output files
@@ -206,7 +231,6 @@ main <- function(in.dir, dir.name, organism, chain, IGBLAST = T, VJ.FASTA = T, T
     print.info(in.dir, dir.name, Vlen, Jlen, del, clone.info)
     
     # remove temporary files
-    #unlink(VJdis.out, recursive = T)
     #unlink(seq.out, recursive = T)
     #unlink(clones.out, recursive = T)
     #unlink(tree.out,  recursive = T)

@@ -1,4 +1,5 @@
 library(ape)
+library(igraph)
 library(phangorn)
 library(seqinr)
 library(Biostrings)
@@ -170,85 +171,130 @@ compute.edge <- function(nameSeq.dt, edge.dt){
 #
 # Returns: -
 
-build.trees <- function( dir.name, in.dir, out.dir, V ){
+build.trees <- function( dir.name, in.dir, out.dir, V, VJdis.files ){
   
-  VJdis.files <- list.files(in.dir)
+  #VJdis.files <- list.files(in.dir)
   Vs <- str_sub(str_extract(VJdis.files, pattern='[0-9]{3}\\.[0-9]{3}'),1, 3)
   VJdis.files <- VJdis.files[Vs==V]
-  
+  if(length(VJdis.files)==0)
+    return()
   for(i in 1:length(VJdis.files)){
     FASTA.file <- VJdis.files[i]
     # read FASTA file as DNAbin format
-    fasta.dna <- read.dna(paste0(in.dir, FASTA.file), format='fasta')
+    fasta.dna_total <- read.dna(paste0(in.dir, FASTA.file), format='fasta')
     
     # skip small or big files
-    n.seq <- nrow(fasta.dna)
+    n.seq <- nrow(fasta.dna_total)
     
-    file.name <- substr(FASTA.file, 1, nchar(FASTA.file)-6)
-    
-    if( n.seq <= MIN.SEQ) { 
-      print(paste0(FASTA.file,' - Not enough sequences to make tree with Phylip'))
-      # only 1 sequence - fix header
-      head <- paste0(file.name, '_', dimnames(fasta.dna)[[1]])
-      seq <- toupper(sapply(fasta.dna, paste, collapse=""))
-      fasta.dt <- data.table(head=head, seq=seq)
-      # save 
-      if(file.exists(paste0(out.dir, dir.name, '_sequences_', V, '.fasta')))
-        write.FASTA(paste0(dir.name, '_sequences_', V), out.dir, fasta.dt, append = T)
-      else
-        write.FASTA(paste0(dir.name, '_sequences_', V), out.dir, fasta.dt, append = F)
-      
-      next()
-    }
-    
-    # if number of sequence is between MIN.SEQ and MID.SEQ - build tree with Maximum Parsimony
-    if( n.seq > (MIN.SEQ + 1) & n.seq < MAX.SEQ ){
-      print(paste0(FASTA.file, ' - maximum parsimony'))
-      
-      # run maximum parsimony
-      tree <- pratchet(as.phyDat(fasta.dna))
-      
-      # if number of sequence is between MID.SEQ and MAX.SEQ - build tree with Neigbor joining
-    }else if( n.seq >= MAX.SEQ | n.seq == (MIN.SEQ+1)){
-      print(paste0(FASTA.file, ' - neighbor joining'))
-      
-      # make distance matrix
-      dist.mat <- as.matrix(dist.hamming(as.phyDat(fasta.dna)))#dist.dna(fasta.dna, model='K80', as.matrix=T)
+    # make distance matrix
+    if (n.seq>1){
+      dist.mat <- as.matrix(dist.hamming(as.phyDat(fasta.dna_total)))#dist.dna(fasta.dna, model='K80', as.matrix=T)
       bad <- which(rowSums(is.nan(dist.mat))>(nrow(dist.mat)/4))
       if(length(bad)>0){
-        fasta.dna <- fasta.dna[-bad,]
-        dist.mat <- as.matrix(dist.hamming(as.phyDat(fasta.dna)))#dist.dna(fasta.dna, model='K80', as.matrix=T)
+        fasta.dna_total <- fasta.dna_total[-bad,]
+        dist.mat <- as.matrix(dist.hamming(as.phyDat(fasta.dna_total)))#dist.dna(fasta.dna, model='K80', as.matrix=T)
         bad2 <- unique(which(is.nan(dist.mat), arr.ind=T)[,1])
         if(length(bad2)>0){
-          fasta.dna <- fasta.dna[-bad2,]
-          dist.mat <- dist.dna(fasta.dna, model='K80', as.matrix=T)
+          fasta.dna_total <- fasta.dna_total[-bad2,]
+          dist.mat <- dist.dna(fasta.dna_total, model='K80', as.matrix=T)
         }
-      } 
-      
-      # run NJ 
-      tree <- NJ(dist.mat)
-      
+      }
     }
-    print('Get internal nodes:')
-    seq.char <- get.internal.nodes(tree, fasta.dna)
+    is.Prim<-TRUE
     
-    edge.dt <- create.fromTo(tree, seq.char, file.name)
-    nameSeq.dt <- data.table(head= sapply(names(seq.char), function(x) paste0(file.name, '_', x)), 
-                             seq=seq.char)
+    if( n.seq > MIN.SEQ) { 
+      print ("Clustering: RUN PRIM")
+      tresh_old_clustering<- 8/ncol(fasta.dna_total)
+      dist.mat[dist.mat>tresh_old_clustering]<- 0
+      g<- graph.adjacency(dist.mat, weighted = TRUE)
+      g_mst<- mst(g, algorithm = 'prim')
+      c<- components(g_mst)
+      #prim<- spantree(dist.mat, 0.01)
+      numOfComponents<- count_components(g_mst) 
+    } else{
+      is.Prim<-FALSE
+      numOfComponents<-1
+    }
     
-    # compute edge lengths
-    edge.dt <- compute.edge(nameSeq.dt, edge.dt)
     
-    # save sequences as FASTA file
-    if(file.exists(paste0(out.dir, dir.name, '_sequences_', V, '.fasta')))
-      write.FASTA(paste0(dir.name, '_sequences_', V), out.dir, nameSeq.dt, append = T)
-    else
-      write.FASTA(paste0(dir.name, '_sequences_', V), out.dir, nameSeq.dt, append = F)
-    # save Fome/To/distances table (edges)
-    if(file.exists(paste0(out.dir, dir.name, '_edges_', V, '.tab')))
-      fwrite(edge.dt, file=paste0(out.dir, dir.name, '_edges_', V, '.tab'), quote=F, sep='\t', col.names=F, row.names=F, append = T)
-    else
-      fwrite(edge.dt, file=paste0(out.dir, dir.name, '_edges_', V, '.tab'), quote=F, sep='\t', col.names=T, row.names=F) 
+    for (j in 1: numOfComponents){
+      
+      if(is.Prim){
+        indexes<- as.vector(which(c$membership==j))
+        fasta.dna<- fasta.dna_total[indexes,]
+      } else{
+        fasta.dna<- fasta.dna_total
+      }
+      
+      # skip small or big files
+      n.seq <- nrow(fasta.dna)
+      
+      file.name <- paste0(substr(FASTA.file, 1, nchar(FASTA.file)-6),'.',sprintf('%03d',j))
+      
+      if( n.seq <= MIN.SEQ) { 
+        print(paste0(FASTA.file,' - Not enough sequences to make tree with Phylip'))
+        # only 1 sequence - fix header
+        head <- paste0(file.name, '_', dimnames(fasta.dna)[[1]])
+        seq <- toupper(sapply(fasta.dna, paste, collapse=""))
+        fasta.dt <- data.table(head=head, seq=seq)
+        # save 
+        if(file.exists(paste0(out.dir, dir.name, '_sequences_', V, '.fasta')))
+          write.FASTA(paste0(dir.name, '_sequences_', V), out.dir, fasta.dt, append = T)
+        else
+          write.FASTA(paste0(dir.name, '_sequences_', V), out.dir, fasta.dt, append = F)
+        
+        next()
+      }
+      
+      # if number of sequence is between MIN.SEQ and MID.SEQ - build tree with Maximum Parsimony
+      if( n.seq > (MIN.SEQ + 1) & n.seq < MAX.SEQ ){
+        print(paste0(FASTA.file, ' - maximum parsimony'))
+        
+        # run maximum parsimony
+        tree <- pratchet(as.phyDat(fasta.dna))
+        
+        # if number of sequence is between MID.SEQ and MAX.SEQ - build tree with Neigbor joining
+      }else if( n.seq >= MAX.SEQ | n.seq == (MIN.SEQ+1)){
+        print(paste0(FASTA.file, ' - neighbor joining'))
+        
+        # make distance matrix
+        dist.mat <- as.matrix(dist.hamming(as.phyDat(fasta.dna)))#dist.dna(fasta.dna, model='K80', as.matrix=T)
+        bad <- which(rowSums(is.nan(dist.mat))>(nrow(dist.mat)/4))
+        if(length(bad)>0){
+          fasta.dna <- fasta.dna[-bad,]
+          dist.mat <- as.matrix(dist.hamming(as.phyDat(fasta.dna)))#dist.dna(fasta.dna, model='K80', as.matrix=T)
+          bad2 <- unique(which(is.nan(dist.mat), arr.ind=T)[,1])
+          if(length(bad2)>0){
+            fasta.dna <- fasta.dna[-bad2,]
+            dist.mat <- dist.dna(fasta.dna, model='K80', as.matrix=T)
+          }
+        } 
+        
+        # run NJ 
+        tree <- NJ(dist.mat)
+        
+      }
+      print('Get internal nodes:')
+      seq.char <- get.internal.nodes(tree, fasta.dna)
+      
+      edge.dt <- create.fromTo(tree, seq.char, file.name)
+      nameSeq.dt <- data.table(head= sapply(names(seq.char), function(x) paste0(file.name, '_', x)), 
+                               seq=seq.char)
+      
+      # compute edge lengths
+      edge.dt <- compute.edge(nameSeq.dt, edge.dt)
+      
+      # save sequences as FASTA file
+      if(file.exists(paste0(out.dir, dir.name, '_sequences_', V, '.fasta')))
+        write.FASTA(paste0(dir.name, '_sequences_', V), out.dir, nameSeq.dt, append = T)
+      else
+        write.FASTA(paste0(dir.name, '_sequences_', V), out.dir, nameSeq.dt, append = F)
+      # save Fome/To/distances table (edges)
+      if(file.exists(paste0(out.dir, dir.name, '_edges_', V, '.tab')))
+        fwrite(edge.dt, file=paste0(out.dir, dir.name, '_edges_', V, '.tab'), quote=F, sep='\t', col.names=F, row.names=F, append = T)
+      else
+        fwrite(edge.dt, file=paste0(out.dir, dir.name, '_edges_', V, '.tab'), quote=F, sep='\t', col.names=T, row.names=F) 
+    }
   }
   return()
 }

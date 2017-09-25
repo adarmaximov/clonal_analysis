@@ -678,27 +678,6 @@ convert.format <- function(V, dir.name, in.dir, out.seq.dir, out.clones.dir, Vle
   return()
 }
 
-split.tree.files <- function(dir.name, tree.out){
-  
-  all.nameSeq.dt <- read.FASTA(paste0(dir.name, '_sequences.fasta'), tree.out)
-  all.edge.dt <- fread( paste0(tree.out, dir.name, '_edges.tab'), sep="\t", header=T)
-  
-  # split by Vs
-  tmp.seq <- str_extract(all.nameSeq.dt[,head], pattern='[0-9]{3}\\.[0-9]{3}')
-  tmp.edge <- str_extract(all.edge.dt[,Tree], pattern='[0-9]{3}\\.[0-9]{3}')
-  Vs.seq <- str_sub(tmp.seq, 1, 3)
-  Vs.edge <- str_sub(tmp.edge, 1, 3)
-  uni.Vs <- unique(Vs.seq)
-  # save files
-  for(i in 1:length(uni.Vs)){
-    tmp.nameSeq.df <- all.nameSeq.dt[Vs.seq==uni.Vs[i],]
-    write.FASTA(paste0(dir.name, '_sequences_', uni.Vs[i]), tree.out, tmp.nameSeq.df, append=F)
-    tmp.edge.dt <- all.edge.dt[Vs.edge==uni.Vs[i],]
-    fwrite(tmp.edge.dt, file=paste0(tree.out, dir.name, '_edges_', uni.Vs[i], '.tab'), quote=F, sep='\t', col.names=T, row.names=F) 
-  }
-  return(uni.Vs)
-}
-
 merge.out.files <- function(dir.name, seq.out, clones.out, seq.out.merged, clones.out.merged){
   
   all.files <- list.files(clones.out)
