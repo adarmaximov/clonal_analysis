@@ -161,10 +161,13 @@ main <- function(in.dir, dir.name, organism, chain, IGBLAST = T, VJ.FASTA = T, T
     print (Sys.time())
     
     # for(i in 1: length(uni.Vs)){
+    #   if (i==9){
+    #     print (i)
+    #   }
     #   build.trees(dir.name, VJdis.out, tree.out,uni.Vs[i], VJdis.files)
     # }
     # print(Sys.time())
-    # 
+
     # run big trees sequencially
     print('run big trees')
     for(i in 1:length(uni.Vs))

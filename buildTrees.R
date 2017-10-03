@@ -201,19 +201,21 @@ build.trees <- function( dir.name, in.dir, out.dir, V, VJdis.files ){
       }
     }
     is.Prim<-TRUE
-    
+    numOfComponents<- n.seq
     if( n.seq > MIN.SEQ) { 
       print ("Clustering: RUN PRIM")
       tresh_old_clustering<- 8/ncol(fasta.dna_total)
       dist.mat[dist.mat>tresh_old_clustering]<- 0
+      if(sum(dist.mat)==0){
+        is.Prim<-FALSE
+      } else {
       g<- graph.adjacency(dist.mat, weighted = TRUE)
       g_mst<- mst(g, algorithm = 'prim')
       c<- components(g_mst)
-      #prim<- spantree(dist.mat, 0.01)
-      numOfComponents<- count_components(g_mst) 
+      numOfComponents<- count_components(g_mst)
+      }
     } else{
       is.Prim<-FALSE
-      numOfComponents<-1
     }
     
     
@@ -223,7 +225,7 @@ build.trees <- function( dir.name, in.dir, out.dir, V, VJdis.files ){
         indexes<- as.vector(which(c$membership==j))
         fasta.dna<- fasta.dna_total[indexes,]
       } else{
-        fasta.dna<- fasta.dna_total
+        fasta.dna<- fasta.dna_total[j,]
       }
       
       # skip small or big files
